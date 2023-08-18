@@ -85,8 +85,8 @@ class WebGLRenderer extends Renderer {
     init(){
         let gl = this.gl;
         
-        this.particleTexWidth = 100;
-        this.particleTexHeight = 100;
+        this.particleTexWidth = 600;
+        this.particleTexHeight = 600;
         this.numParticle = this.particleTexWidth * this.particleTexHeight;
 
         const ids = new Array(this.numParticle).fill(0).map((_,i)=>i);
@@ -94,7 +94,7 @@ class WebGLRenderer extends Renderer {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(ids), gl.STATIC_DRAW);
         gl.bindBuffer(gl.ARRAY_BUFFER, null);
-        
+                
         let xAbsMax = 5;
         let yAbsMax = 5;
         let zAbsMax = 5;
@@ -102,7 +102,7 @@ class WebGLRenderer extends Renderer {
         const rand = (a,b) => (a + Math.random()*(b-a));
 
         const positions = new Float32Array(ids.map(_ => [rand(-xAbsMax, xAbsMax), rand(-yAbsMax, yAbsMax), rand(-zAbsMax, zAbsMax), 1]).flat());
-        const velocities = new Float32Array(ids.map(_ => [rand(-10, 10), rand(-10, 10), rand(-10, 10), 1]).flat());
+        const velocities = new Float32Array(ids.map(_ => [rand(-1, 1), rand(-1, 1), rand(-1, 1), 1]).flat());
         
         this.positionTex1 = this.createTexture(gl, positions, this.particleTexWidth, this.particleTexHeight);
         this.positionTex2 = this.createTexture(gl, null, this.particleTexWidth, this.particleTexHeight);
@@ -125,6 +125,8 @@ class WebGLRenderer extends Renderer {
     //---------------------------------------
     beforeFrame(){
         let gl = this.gl;
+
+        // Update positions
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.positionInfoWrite.fb);
         gl.viewport(0, 0, this.particleTexWidth, this.particleTexHeight);
         this.updateShader.use();
@@ -132,9 +134,16 @@ class WebGLRenderer extends Renderer {
         gl.bindTexture(gl.TEXTURE_2D, this.positionInfoRead.tex);
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTex);
+        this.updateShader.setVec2("texDimensions", this.particleTexWidth, this.particleTexHeight);
+        this.updateShader.setFloat("deltaTime", this.timeDelta/1000.0);
+        console.log(this.timeDelta);
         this.renderQuad();
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        let swap = this.positionInfoRead;
+        this.positionInfoRead = this.positionInfoWrite;
+        this.positionInfoWrite = swap;
     }
 
     // Main loop function.
@@ -156,9 +165,11 @@ class WebGLRenderer extends Renderer {
         this.shader.use();
         this.shader.setMat4("proj", proj);
         this.shader.setMat4("view", view);
+
         this.drawShader.use();
         this.drawShader.setMat4("proj", proj);
         this.drawShader.setMat4("view", view);
+
         this.skyShader.use();
         this.skyShader.setMat4("proj", proj);
         let viewTrans = mat4.fromValues(
@@ -206,13 +217,15 @@ class WebGLRenderer extends Renderer {
         this.drawShader.use();
         this.drawShader.setInt("positionTex", 0);
         this.drawShader.setVec2("texDimentions", this.particleTexWidth, this.particleTexHeight);
-        for(let i=0; i<this.numParticle; i++){
-            model = mat4.create();
-            mat4.scale(model, model, vec3.fromValues(0.01, 0.01, 0.01));
-            this.drawShader.setFloat("id", i);
-            this.drawShader.setMat4("model", model);
-            this.renderCube();
-        }
+        mat4.scale(model, model, vec3.fromValues(0.01, 0.01, 0.01));
+        this.drawShader.setMat4("model", model);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
+        gl.enableVertexAttribArray(3);
+        gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribDivisor(3, 1);
+
+        gl.bindVertexArray(this.vao.cube);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, this.numParticle);
         
     }
 

@@ -9,6 +9,6 @@ out vec4 FragColor;
 
 void main()
 {             
-    vec4 depthValue = texture(depthMap, iTex);
-    FragColor = depthValue; 
+    vec4 col = texture(depthMap, iTex);
+    FragColor = col; 
 }
