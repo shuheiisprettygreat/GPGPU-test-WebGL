@@ -1,7 +1,7 @@
 import {Shader} from "../Shader.js";
 import {Renderer} from "../Renderer.js";
 import {Camera} from "../Camera.js";
-import {initVAO, initTexture} from "../init-buffers.js";
+import {initVAO, initTexture, initCubeVAO} from "../init-buffers.js";
 
 import {mat4, vec3} from "gl-matrix";
 
@@ -33,16 +33,18 @@ class WebGLRenderer extends Renderer {
         this.width = this.canvas.width;
         this.height = this.canvas.height;
 
-        // setup shaders
+        // default material shader
         this.shader = new Shader(this.gl, vsSource, fsSource);
+        // background shader
         this.skyShader = new Shader(this.gl, skyVsSource, skyFsSource);
+        // screen NDC quad shader
         this.quadShader = new Shader(this.gl, quadVsSource, quadFsSource);
-        // TODO : make shader to update positions
+        // shader for update position
         this.updateShader = new Shader(this.gl, updateVsSource, updateFsSource);
         this.updateShader.use();
         this.updateShader.setInt("positionTexRead", 0);
         this.updateShader.setInt("velocitiesTex", 1);
-        // TODO : make shader to draw particles
+        // shader to draw instanced cube.
         this.drawShader = new Shader(this.gl, drawVsSource, drawFsSource);
 
         // setup datas
@@ -54,8 +56,10 @@ class WebGLRenderer extends Renderer {
         
         // setup camera
         this.camera = new Camera(8, 6, 10, 0, 1, 0, 0, 0, 45);
+        this.camera = new Camera(10, 10, 20, 0, 1, 0, 0, 0, 45);
         this.camera.lookAt(0, 0, 0);
 
+        // extensions
         const ext = this.gl.getExtension('EXT_color_buffer_float');
     }
 
@@ -85,9 +89,11 @@ class WebGLRenderer extends Renderer {
     init(){
         let gl = this.gl;
         
+        // define nr of particle, and its texture
         this.particleTexWidth = 600;
         this.particleTexHeight = 600;
         this.numParticle = this.particleTexWidth * this.particleTexHeight;
+
 
         const ids = new Array(this.numParticle).fill(0).map((_,i)=>i);
         this.idBuffer = gl.createBuffer();
@@ -114,6 +120,15 @@ class WebGLRenderer extends Renderer {
         this.positionInfoRead = {fb:this.positionsFb1, tex:this.positionTex1};
         this.positionInfoWrite = {fb:this.positionsFb2, tex:this.positionTex2};
 
+        // setup instanced rendering.
+        this.instancedCubeVAO = initCubeVAO(gl);
+        gl.bindVertexArray(this.instancedCubeVAO);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
+            gl.enableVertexAttribArray(3);
+            gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
+            gl.vertexAttribDivisor(3, 1);
+        gl.bindVertexArray(null);
+
     }
 
     //---------------------------------------
@@ -136,7 +151,6 @@ class WebGLRenderer extends Renderer {
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTex);
         this.updateShader.setVec2("texDimensions", this.particleTexWidth, this.particleTexHeight);
         this.updateShader.setFloat("deltaTime", this.timeDelta/1000.0);
-        console.log(this.timeDelta);
         this.renderQuad();
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -180,13 +194,8 @@ class WebGLRenderer extends Renderer {
         );
         this.skyShader.setMat4("view", viewTrans);
 
-        //render background
-        gl.viewport(0, 0, this.width, this.height);
-        gl.depthMask(false);
-        this.skyShader.use();
-        this.renderCube();
-
         // render scene
+        gl.viewport(0, 0, this.width, this.height);
         gl.depthMask(true);
         this.drawParticles();
         this.drawScene(this.shader);
@@ -206,25 +215,28 @@ class WebGLRenderer extends Renderer {
         gl.viewport(debugSize*2, 0, debugSize, debugSize);
         gl.bindTexture(gl.TEXTURE_2D, this.velocityTex);
         this.renderQuad();
+
+        //render background
+        gl.viewport(0, 0, this.width, this.height);
+        gl.depthMask(false);
+        this.skyShader.use();
+        this.renderCube();
     }
 
     drawParticles(){
         let gl = this.gl;
         let model = mat4.create();
 
+
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.positionTex2);
+        gl.bindTexture(gl.TEXTURE_2D, this.positionInfoRead.tex);
         this.drawShader.use();
         this.drawShader.setInt("positionTex", 0);
         this.drawShader.setVec2("texDimentions", this.particleTexWidth, this.particleTexHeight);
         mat4.scale(model, model, vec3.fromValues(0.01, 0.01, 0.01));
         this.drawShader.setMat4("model", model);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.idBuffer);
-        gl.enableVertexAttribArray(3);
-        gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
-        gl.vertexAttribDivisor(3, 1);
-
-        gl.bindVertexArray(this.vao.cube);
+        
+        gl.bindVertexArray(this.instancedCubeVAO);
         gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, this.numParticle);
         
     }
